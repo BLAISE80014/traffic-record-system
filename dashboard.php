@@ -1,5 +1,13 @@
 <?php
+session_start();
 include("db.php");
+
+// Check if user is logged in
+if (!isset($_SESSION['user_id'])) {
+    header("Location: index.php");
+    exit();
+}
+
 //Driver Section
 
 /* ================= DRIVER SECTION ================= */
@@ -115,40 +123,33 @@ if(isset($_POST['v_update'])){
 
 //Violation Section
 /* ---------- ADD ---------- */
-if(isset($_POST['add'])){
+if(isset($_POST['driver_id']) && isset($_POST['type']) && isset($_POST['date']) && !isset($_POST['update'])){
     $driver_id = $_POST['driver_id'];
     $type = $_POST['type'];
     $date = $_POST['date'];
 
     $conn->query("INSERT INTO violations (driver_id, type, date)
     VALUES ('$driver_id','$type','$date')");
+    
+    // Return JSON for AJAX requests
+    if(isset($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] === 'XMLHttpRequest'){
+        $new_id = $conn->insert_id;
+        echo json_encode(['success' => true, 'id' => $new_id]);
+        exit();
+    }
+    
+    header("Location: dashboard.php#violation");
+    exit();
 }
 
 /* ---------- DELETE ---------- */
-if(isset($_GET['delete'])){
-    $id = $_GET['delete'];
-    $conn->query("DELETE FROM violations WHERE id=$id");
-}
+// Delete functionality removed
 
 /* ---------- EDIT ---------- */
-$edit = null;
-if(isset($_GET['edit'])){
-    $id = $_GET['edit'];
-    $res = $conn->query("SELECT * FROM violations WHERE id=$id");
-    $edit = $res->fetch_assoc();
-}
+// Edit functionality removed
 
 /* ---------- UPDATE ---------- */
-if(isset($_POST['update'])){
-    $id = $_POST['id'];
-
-    $conn->query("UPDATE violations SET
-        driver_id='$_POST[driver_id]',
-        type='$_POST[type]',
-        date='$_POST[date]'
-        WHERE id=$id
-    ");
-}
+// Update functionality removed
 
 /* ---------- DATA ---------- */
 $result = $conn->query("SELECT * FROM violations");
@@ -219,6 +220,22 @@ if ($accidentsTotalRes) $systemCounts['Accidents'] = (int) $accidentsTotalRes->f
 $paymentsTotalRes = $conn->query("SELECT COUNT(*) AS total FROM payments");
 if ($paymentsTotalRes) $systemCounts['Payments'] = (int) $paymentsTotalRes->fetch_assoc()['total'];
 
+$activityEvents = [];
+$activityRes = $conn->query(
+    "SELECT 'Violation' AS category, CONCAT('Violation: ', type, ' for driver ', driver_id) AS description, date
+     FROM violations
+     UNION ALL
+     SELECT 'Accident' AS category, CONCAT('Accident: ', location, ' for driver ', driver_id) AS description, date
+     FROM accidents
+     ORDER BY date DESC
+     LIMIT 5"
+);
+if ($activityRes) {
+    while ($row = $activityRes->fetch_assoc()) {
+        $activityEvents[] = $row;
+    }
+}
+
 //Accident Section
 if(isset($_POST['save_accident'])){
 
@@ -259,7 +276,7 @@ if(isset($_POST['save_payment'])){
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Traffic Record System | Modern Dashboard</title>
+<title>Traffic Fine System | Modern Dashboard</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
@@ -466,7 +483,7 @@ input:focus, select:focus, textarea:focus {
         <i class="fa-solid fa-traffic-light text-white text-xl"></i>
       </div>
       <div>
-        <h2 class="text-xl font-bold tracking-tight">Traffic System</h2>
+        <h2 class="text-xl font-bold tracking-tight">TFS</h2>
         <p class="text-xs text-slate-400">Fleet Management</p>
       </div>
     </div>
@@ -506,6 +523,11 @@ input:focus, select:focus, textarea:focus {
 
 </a>
 
+      <a href="#" onclick="showSection('settings')" class="menu-item flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800 transition-all duration-300">
+        <i class="fa-solid fa-cog text-orange-400 w-5"></i> 
+        <span class="font-medium">Settings</span>
+      </a>
+
       <a href="#" onclick="logout()" class="menu-item bg-gradient-to-r from-red-600 to-red-700 p-3 rounded-xl mt-6 flex items-center gap-3 shadow-lg hover:shadow-red-500/20 transition-all duration-300">
         <i class="fa-solid fa-right-from-bracket"></i>
         <span class="font-medium">Logout</span>
@@ -536,7 +558,7 @@ input:focus, select:focus, textarea:focus {
       <div class="flex items-center justify-between">
         <div>
           <p class="text-gray-500 text-sm font-semibold uppercase tracking-wide">Drivers</p>
-          <p class="text-3xl font-bold text-gray-800 mt-2" id="driverCount">0</p>
+          <p class="text-3xl font-bold text-gray-800 mt-2" id="driverCount">25</p>
         </div>
         <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
           <i class="fa-solid fa-users text-blue-600 text-xl"></i>
@@ -549,7 +571,7 @@ input:focus, select:focus, textarea:focus {
       <div class="flex items-center justify-between">
         <div>
           <p class="text-gray-500 text-sm font-semibold uppercase tracking-wide">Vehicles</p>
-          <p class="text-3xl font-bold text-gray-800 mt-2" id="vehicleCount">0</p>
+          <p class="text-3xl font-bold text-gray-800 mt-2" id="vehicleCount">20</p>
         </div>
         <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
           <i class="fa-solid fa-car text-green-600 text-xl"></i>
@@ -562,7 +584,7 @@ input:focus, select:focus, textarea:focus {
       <div class="flex items-center justify-between">
         <div>
           <p class="text-gray-500 text-sm font-semibold uppercase tracking-wide">Violations</p>
-          <p class="text-3xl font-bold text-gray-800 mt-2" id="violationCount">0</p>
+          <p class="text-3xl font-bold text-gray-800 mt-2" id="violationCount">5</p>
         </div>
         <div class="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center">
           <i class="fa-solid fa-gavel text-yellow-600 text-xl"></i>
@@ -575,7 +597,7 @@ input:focus, select:focus, textarea:focus {
       <div class="flex items-center justify-between">
         <div>
           <p class="text-gray-500 text-sm font-semibold uppercase tracking-wide">Accidents</p>
-          <p class="text-3xl font-bold text-gray-800 mt-2" id="accidentCount">0</p>
+          <p class="text-3xl font-bold text-gray-800 mt-2" id="accidentCount">10</p>
         </div>
         <div class="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center">
           <i class="fa-solid fa-car-crash text-red-600 text-xl"></i>
@@ -597,7 +619,7 @@ input:focus, select:focus, textarea:focus {
       <div class="space-y-3">
         <div class="flex justify-between items-center py-2 border-b border-gray-100">
           <span class="text-gray-600"><i class="fa-regular fa-user mr-2"></i>Logged in:</span>
-          <span class="font-semibold text-gray-800">Blaise</span>
+          <span class="font-semibold text-gray-800"><?php echo htmlspecialchars($_SESSION['user_name']); ?></span>
         </div>
         <div class="flex justify-between items-center py-2 border-b border-gray-100">
           <span class="text-gray-600"><i class="fa-regular fa-circle-check mr-2"></i>Status:</span>
@@ -605,7 +627,7 @@ input:focus, select:focus, textarea:focus {
         </div>
         <div class="flex justify-between items-center py-2 border-b border-gray-100">
           <span class="text-gray-600"><i class="fa-regular fa-envelope mr-2"></i>Email:</span>
-          <span class="font-semibold text-gray-800">blaisehirwanshuti@gmail.com</span>
+          <span class="font-semibold text-gray-800"><?php echo htmlspecialchars($_SESSION['user_email']); ?></span>
         </div>
         <div class="flex justify-between items-center py-2">
           <span class="text-gray-600"><i class="fa-regular fa-phone mr-2"></i>Phone:</span>
@@ -622,7 +644,19 @@ input:focus, select:focus, textarea:focus {
         <h3 class="text-lg font-bold text-gray-800">Recent Activity</h3>
       </div>
       <div id="activityList" class="space-y-3 max-h-64 overflow-y-auto">
-        <div class="text-center text-gray-400 py-4">No recent activity yet</div>
+        <?php if (empty($activityEvents)) { ?>
+          <div class="text-center text-gray-400 py-4">No recent activity yet</div>
+        <?php } else {
+          foreach ($activityEvents as $event) { ?>
+            <div class="activity-item p-3 rounded-xl border-l-3 border-slate-200">
+              <div class="flex items-center gap-3">
+                <i class="fa-regular fa-bell text-blue-500"></i>-
+                <span class="text-sm text-gray-700"><?= htmlspecialchars($event['description']) ?></span>
+                <span class="text-xs text-gray-400 ml-auto"><?= date('M j, Y', strtotime($event['date'])) ?></span>
+              </div>
+            </div>
+        <?php }
+        } ?>
       </div>
     </div>
   </div>
@@ -671,74 +705,125 @@ input:focus, select:focus, textarea:focus {
 
   <!-- HEADER -->
   <div class="flex justify-between items-center mb-6">
-    <h2 class="text-2xl font-bold">Drivers</h2>
 
-    <button onclick="toggleForm('driverForm')" 
-      class="bg-blue-600 text-white px-4 py-2 rounded">
-      Add Driver
-    </button>
+  <div>
+    <h2 class="text-2xl font-bold">Drivers</h2>
+    <p class="text-gray-500 text-sm">
+      Browse drivers and maintain records.
+    </p>
   </div>
 
-  <!-- SEARCH -->
-  <form method="GET" class="mb-4 flex gap-2">
-    <input type="text" name="search"
-      value="<?= $_GET['search'] ?? '' ?>"
-      placeholder="Search driver..."
-      class="border p-2 w-full rounded">
+  <!-- ADD BUTTON -->
+  <button
+    onclick="document.getElementById('driverModal').classList.remove('hidden')"
+    class="bg-blue-600 text-white px-4 py-2 rounded">
 
-    <button class="bg-blue-500 text-white px-4 rounded">Search</button>
+    Add Driver
 
-    <a href="dashboard.php#driver" class="bg-gray-500 text-white px-4 rounded">Reset</a>
-  </form>
+  </button>
 
-  <!-- FORM -->
-  <div id="driverForm" class="hidden bg-white p-4 rounded mb-6">
+</div>
+  
 
+  <!-- DRIVER MODAL -->
+<div id="driverModal"
+     class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+
+  <div class="bg-white p-6 rounded w-full max-w-lg">
+
+    <!-- TITLE -->
+    <div class="flex justify-between items-center mb-4">
+
+      <h2 class="text-xl font-bold">
+        <?= $editData ? 'Edit Driver' : 'Add Driver' ?>
+      </h2>
+
+      <button
+        onclick="document.getElementById('driverModal').classList.add('hidden')"
+        class="text-red-500 text-2xl">
+
+        &times;
+
+      </button>
+
+    </div>
+
+    <!-- FORM -->
     <form method="POST">
 
-      <input name="name"
-        value="<?= $editData['name'] ?? '' ?>"
-        placeholder="Name"
-        class="border p-2 w-full mb-2">
+      <input type="hidden"
+             name="id"
+             value="<?= $editData['id'] ?? '' ?>">
 
-      <input name="license"
-        value="<?= $editData['license_number'] ?? '' ?>"
-        placeholder="License"
-        class="border p-2 w-full mb-2">
+      <input type="text"
+             name="name"
+             placeholder="Driver Name"
+             value="<?= $editData['name'] ?? '' ?>"
+             class="border p-2 w-full mb-3 rounded"
+             required>
 
-      <input type="date" name="dob"
-        value="<?= $editData['dob'] ?? '' ?>"
-        class="border p-2 w-full mb-2">
+      <input type="text"
+             name="license"
+             placeholder="License Number"
+             value="<?= $editData['license_number'] ?? '' ?>"
+             class="border p-2 w-full mb-3 rounded"
+             required>
 
-      <input name="gender"
-        value="<?= $editData['gender'] ?? '' ?>"
-        placeholder="Gender"
-        class="border p-2 w-full mb-2">
+      <input type="date"
+             name="dob"
+             value="<?= $editData['dob'] ?? '' ?>"
+             class="border p-2 w-full mb-3 rounded"
+             required>
 
-      <input name="phone"
-        value="<?= $editData['phone'] ?? '' ?>"
-        placeholder="Phone"
-        class="border p-2 w-full mb-2">
+      <select name="gender"
+              class="border p-2 w-full mb-3 rounded">
 
+        <option value="Male">Male</option>
+        <option value="Female">Female</option>
+
+      </select>
+
+      <input type="text"
+             name="phone"
+             placeholder="Phone"
+             value="<?= $editData['phone'] ?? '' ?>"
+             class="border p-2 w-full mb-3 rounded"
+             required>
+
+      <!-- BUTTON -->
       <?php if($editData){ ?>
-        <input type="hidden" name="id" value="<?= $editData['id'] ?>">
-        <button name="update" class="bg-yellow-500 text-white w-full p-2 rounded">
+
+        <button
+          type="submit"
+          name="update"
+          class="bg-blue-600 text-white w-full py-2 rounded">
+
           Update Driver
+
         </button>
+
       <?php } else { ?>
-        <button name="save" class="bg-green-600 text-white w-full p-2 rounded">
+
+        <button
+          type="submit"
+          name="save"
+          class="bg-green-600 text-white w-full py-2 rounded">
+
           Save Driver
+
         </button>
+
       <?php } ?>
 
     </form>
 
   </div>
 
+</div>
   <!-- TABLE -->
   <div class="bg-white p-4 rounded">
 
-    <table class="w-full border">
+    <table id="driverTable" class="w-full border">
       <thead>
         <tr>
           <th>Name</th>
@@ -878,16 +963,15 @@ input:focus, select:focus, textarea:focus {
     <div><h2 class="text-2xl font-bold text-gray-800">Violations</h2><p class="text-gray-500 text-sm">Record traffic offenses</p></div>
     <button onclick="toggleForm('violationForm')" class="btn-primary text-white px-6 py-2.5 rounded-xl flex items-center gap-2 shadow-lg"><i class="fa-solid fa-plus"></i> Add Violation</button>
   </div>
-       <form method="POST"> 
   <div id="violationForm" class="hidden mb-6 form-container p-6 bg-white rounded-2xl">
 
-    <input id="vi_driver" name="driver_id" class="border border-gray-200 rounded-xl p-3 mb-3 w-full" placeholder="Driver ID">
-    <input id="vi_type" name="type" class="border border-gray-200 rounded-xl p-3 mb-3 w-full" placeholder="Violation Type">
-    <input type="date" id="vi_date" name="date" class="border border-gray-200 rounded-xl p-3 mb-3 w-full" placeholder="Date">
-    <button type="submit" name="add" class="bg-gradient-to-r from-green-500 to-green-600 text-white px-6 py-2.5 rounded-xl w-full font-semibold">Save Violation</button>
+    <input id="vi_driver" name="driver_id" value="<?= $edit['driver_id'] ?? '' ?>" class="border border-gray-200 rounded-xl p-3 mb-3 w-full" placeholder="Driver ID">
+    <input id="vi_type" name="type" value="<?= $edit['type'] ?? '' ?>" class="border border-gray-200 rounded-xl p-3 mb-3 w-full" placeholder="Violation Type">
+    <input type="date" id="vi_date" name="date" value="<?= $edit['date'] ?? '' ?>" class="border border-gray-200 rounded-xl p-3 mb-3 w-full" placeholder="Date">
+    
+    <button type="button" onclick="addViolation()" class="bg-gradient-to-r from-green-500 to-green-600 text-white px-6 py-2.5 rounded-xl w-full font-semibold">Save Violation</button>
 
   </div>
-  </form>
   <div class="table-container bg-white rounded-2xl">
     <table class="w-full">
       <thead>
@@ -903,7 +987,7 @@ input:focus, select:focus, textarea:focus {
       $result = $conn->query("SELECT * FROM violations");
       
       while($row = $result->fetch_assoc()){
-        echo "<tr>
+        echo "<tr data-id='{$row['id']}'>
               <td>{$row['driver_id']}</td>
               <td>{$row['type']}</td>
               <td>{$row['date']}</td>
@@ -1103,9 +1187,162 @@ while($row = $result->fetch_assoc()){
   </div>
 
 </div>
-</div>
 
-<!-- ========== ORIGINAL JAVASCRIPT - FULLY INTACT ========== -->
+<!-- SETTINGS SECTION -->
+<div id="settings" class="section hidden p-6">
+  <h2 class="text-3xl font-bold text-gray-800 mb-6">Settings</h2>
+  <p class="text-gray-500 mb-6">Manage your account and system preferences</p>
+
+  <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+    <!-- SETTINGS SIDEBAR NAV -->
+    <div class="bg-white rounded-2xl shadow p-6 h-fit sticky top-8">
+      <h3 class="font-bold text-lg mb-4 text-gray-800">Settings Menu</h3>
+      <div class="flex flex-col gap-2">
+        <button onclick="document.getElementById('account-panel').scrollIntoView({behavior:'smooth'})" class="text-left px-4 py-2 rounded-lg hover:bg-blue-50 text-gray-700 font-medium transition">👤 Account</button>
+        <button onclick="document.getElementById('security-panel').scrollIntoView({behavior:'smooth'})" class="text-left px-4 py-2 rounded-lg hover:bg-blue-50 text-gray-700 transition">🔒 Security</button>
+        <button onclick="document.getElementById('notification-panel').scrollIntoView({behavior:'smooth'})" class="text-left px-4 py-2 rounded-lg hover:bg-blue-50 text-gray-700 transition">🔔 Notifications</button>
+        <button onclick="document.getElementById('system-panel').scrollIntoView({behavior:'smooth'})" class="text-left px-4 py-2 rounded-lg hover:bg-blue-50 text-gray-700 transition">⚙️ System</button>
+        <button onclick="document.getElementById('appearance-panel').scrollIntoView({behavior:'smooth'})" class="text-left px-4 py-2 rounded-lg hover:bg-blue-50 text-gray-700 transition">🎨 Appearance</button>
+        <button onclick="document.getElementById('profile-panel').scrollIntoView({behavior:'smooth'})" class="text-left px-4 py-2 rounded-lg hover:bg-blue-50 text-gray-700 transition">👨‍💼 Profile</button>
+      </div>
+    </div>
+
+    <!-- SETTINGS CONTENT -->
+    <div class="lg:col-span-3 space-y-6">
+      <!-- ACCOUNT SETTINGS -->
+      <div id="account-panel" class="bg-white rounded-2xl shadow p-6 border border-gray-100">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">Account Settings</h3>
+        <form method="POST" class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+            <input type="text" name="full_name" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" value="Blaise Hiranshuti">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Email</label>
+            <input type="email" name="email" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" value="blaisehirwanshuti@gmail.com">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+            <input type="tel" name="phone" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" value="+250 796 261 912">
+          </div>
+          <button type="submit" name="update_settings" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition">Save Changes</button>
+        </form>
+      </div>
+
+      <!-- SECURITY SETTINGS -->
+      <div id="security-panel" class="bg-white rounded-2xl shadow p-6 border border-gray-100">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">Security Settings</h3>
+        <form method="POST" class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Current Password</label>
+            <input type="password" name="current_password" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter current password">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">New Password</label>
+            <input type="password" name="new_password" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter new password">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Confirm Password</label>
+            <input type="password" name="confirm_password" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Confirm new password">
+          </div>
+          <button type="submit" name="update_settings" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition">Update Password</button>
+        </form>
+      </div>
+
+      <!-- NOTIFICATION SETTINGS -->
+      <div id="notification-panel" class="bg-white rounded-2xl shadow p-6 border border-gray-100">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">Notification Settings</h3>
+        <div class="space-y-4">
+          <label class="flex items-center space-x-3">
+            <input type="checkbox" checked class="w-5 h-5 text-blue-600 rounded">
+            <span class="text-gray-700">Email Notifications</span>
+          </label>
+          <label class="flex items-center space-x-3">
+            <input type="checkbox" checked class="w-5 h-5 text-blue-600 rounded">
+            <span class="text-gray-700">SMS Notifications</span>
+          </label>
+          <label class="flex items-center space-x-3">
+            <input type="checkbox" class="w-5 h-5 text-blue-600 rounded">
+            <span class="text-gray-700">Push Notifications</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- SYSTEM SETTINGS -->
+      <div id="system-panel" class="bg-white rounded-2xl shadow p-6 border border-gray-100">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">System Settings</h3>
+        <form method="POST" class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Language</label>
+            <select name="language" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option>English</option>
+              <option>French</option>
+              <option>Spanish</option>
+              <option>Kinyarwanda</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Timezone</label>
+            <select name="timezone" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option>UTC</option>
+              <option>GMT+2</option>
+              <option>GMT+3</option>
+            </select>
+          </div>
+          <button type="submit" name="update_settings" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition">Save System Settings</button>
+        </form>
+      </div>
+
+      <!-- APPEARANCE SETTINGS -->
+      <div id="appearance-panel" class="bg-white rounded-2xl shadow p-6 border border-gray-100">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">Appearance Settings</h3>
+        <div class="space-y-4">
+          <label class="flex items-center space-x-3 cursor-pointer">
+            <input type="radio" name="theme" value="light" onchange="applyTheme('light')" class="w-4 h-4 text-blue-600">
+            <span class="text-gray-700">Light Mode</span>
+          </label>
+          <label class="flex items-center space-x-3 cursor-pointer">
+            <input type="radio" name="theme" value="dark" onchange="applyTheme('dark')" class="w-4 h-4 text-blue-600">
+            <span class="text-gray-700">Dark Mode</span>
+          </label>
+          <label class="flex items-center space-x-3 cursor-pointer">
+            <input type="radio" name="theme" value="auto" onchange="applyTheme('auto')" class="w-4 h-4 text-blue-600">
+            <span class="text-gray-700">Auto (System Default)</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- USER ACCOUNT INFORMATION -->
+      <div id="profile-panel" class="bg-white rounded-2xl shadow p-6 border border-gray-100">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">Account Information</h3>
+        <div class="space-y-4">
+          <div class="flex items-center space-x-4">
+            <div class="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-lg">
+              <i class="fa-solid fa-user text-white text-2xl"></i>
+            </div>
+            <div>
+              <h4 class="text-xl font-semibold text-gray-800"><?php echo htmlspecialchars($_SESSION['user_name']); ?></h4>
+              <p class="text-gray-600"><?php echo htmlspecialchars($_SESSION['user_email']); ?></p>
+              <span class="inline-block bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full mt-1">Active Account</span>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-4 mt-6">
+            <div class="bg-gray-50 p-4 rounded-lg">
+              <div class="text-sm text-gray-500">Account Type</div>
+              <div class="font-semibold text-gray-800">Administrator</div>
+            </div>
+            <div class="bg-gray-50 p-4 rounded-lg">
+              <div class="text-sm text-gray-500">Last Login</div>
+              <div class="font-semibold text-gray-800"><?php echo date('M j, Y H:i'); ?></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
 <script>
 const vaChartData = {
   labels: <?= json_encode($vaChartLabels, JSON_UNESCAPED_UNICODE) ?>,
@@ -1132,11 +1369,15 @@ function updateDashboard(){
   let vehicleCountElem = document.getElementById('vehicleCount');
   let violationCountElem = document.getElementById('violationCount');
   let accidentCountElem = document.getElementById('accidentCount');
+  let driverTable = document.getElementById('driverTable');
+  let vehicleTable = document.getElementById('vehicleTable');
+  let violationTable = document.getElementById('violationTable');
+  let accidentTable = document.getElementById('accidentTable');
   
-  if(driverCountElem) driverCountElem.innerText = document.getElementById('driverTable').rows.length;
-  if(vehicleCountElem) vehicleCountElem.innerText = document.getElementById('vehicleTable').rows.length;
-  if(violationCountElem) violationCountElem.innerText = document.getElementById('violationTable').rows.length;
-  if(accidentCountElem) accidentCountElem.innerText = document.getElementById('accidentTable').rows.length;
+  if(driverCountElem && driverTable) driverCountElem.innerText = driverTable.rows.length;
+  if(vehicleCountElem && vehicleTable) vehicleCountElem.innerText = vehicleTable.rows.length;
+  if(violationCountElem && violationTable) violationCountElem.innerText = violationTable.rows.length;
+  if(accidentCountElem && accidentTable) accidentCountElem.innerText = accidentTable.rows.length;
 }
 
 function addActivity(text){
@@ -1204,15 +1445,51 @@ function addViolation(){
   
   if(!driver) { alert("Please enter driver ID"); return; }
   
-  let table = document.getElementById('violationTable');
-  let row = table.insertRow();
-  row.insertCell(0).innerHTML = driver;
-  row.insertCell(1).innerHTML = type;
-  row.insertCell(2).innerHTML = date;
-  updateDashboard();
-  addActivity("Violation: "+type);
-  toggleForm('violationForm');
+  // Send to database via AJAX
+  let formData = new FormData();
+  formData.append('driver_id', driver);
+  formData.append('type', type);
+  formData.append('date', date);
+  
+  fetch('dashboard.php', {
+    method: 'POST',
+    headers: {
+      'X-Requested-With': 'XMLHttpRequest'
+    },
+    body: formData
+  })
+  .then(response => response.json())
+  .then(data => {
+    if(data.success){
+      // Add to table immediately for UI feedback
+      let table = document.getElementById('violationTable');
+      let row = table.insertRow();
+      row.setAttribute('data-id', data.id);
+      row.insertCell(0).innerHTML = driver;
+      row.insertCell(1).innerHTML = type;
+      row.insertCell(2).innerHTML = date;
+      
+      updateDashboard();
+      addActivity("Violation added: "+type);
+      toggleForm('violationForm');
+      
+      // Clear form and editing state
+      document.getElementById('vi_driver').value = '';
+      document.getElementById('vi_type').value = '';
+      document.getElementById('vi_date').value = '';
+    } else {
+      alert('Error saving violation');
+    }
+  })
+  .catch(error => {
+    alert('Error saving violation to database');
+    console.error('Error:', error);
+  });
 }
+
+// Update violation function removed
+
+// Violation edit/delete functions removed
 
 function addAccident(){
   let id = document.getElementById('a_id').value;
@@ -1362,6 +1639,123 @@ function showSection(id){
   document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
   document.getElementById(id).classList.remove('hidden');
 }
+
+// Theme switching functionality
+function applyTheme(theme) {
+  const html = document.documentElement;
+  const body = document.body;
+  
+  // Handle auto theme
+  if (theme === 'auto') {
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    theme = prefersDark ? 'dark' : 'light';
+  }
+  
+  if (theme === 'dark') {
+    html.classList.add('dark');
+    body.classList.add('dark');
+    body.style.backgroundColor = '#1a1a1a';
+    body.style.color = '#f0f0f0';
+    
+    // Apply dark theme to all white backgrounds
+    document.querySelectorAll('.bg-white').forEach(el => {
+      el.style.backgroundColor = '#2d2d2d';
+      el.style.color = '#f0f0f0';
+    });
+    
+    // Apply dark theme to gray backgrounds
+    document.querySelectorAll('.bg-gray-50, .bg-gray-100, .bg-gray-200').forEach(el => {
+      el.style.backgroundColor = '#1a1a1a';
+    });
+    
+    // Apply dark theme to gradient backgrounds (except the sidebar)
+    document.querySelectorAll('[class*="bg-gradient"]').forEach(el => {
+      if (!el.classList.contains('from-slate-900')) {
+        el.style.backgroundColor = '#2d2d2d';
+      }
+    });
+    
+    // Apply dark theme to tables
+    document.querySelectorAll('th').forEach(el => {
+      el.style.backgroundColor = '#1a1a1a';
+      el.style.color = '#f0f0f0';
+      el.style.borderColor = '#444';
+    });
+    
+    document.querySelectorAll('td').forEach(el => {
+      el.style.borderColor = '#444';
+      el.style.color = '#f0f0f0';
+    });
+    
+    // Apply dark theme to inputs
+    document.querySelectorAll('input, select, textarea').forEach(el => {
+      el.style.backgroundColor = '#3a3a3a';
+      el.style.color = '#f0f0f0';
+      el.style.borderColor = '#555';
+    });
+    
+    // Apply dark theme to text elements
+    document.querySelectorAll('[class*="text-gray"]').forEach(el => {
+      el.style.color = '#e0e0e0';
+    });
+    
+    // Apply dark to borders
+    document.querySelectorAll('[class*="border"]').forEach(el => {
+      el.style.borderColor = '#444';
+    });
+  } else {
+    // Light theme
+    html.classList.remove('dark');
+    body.classList.remove('dark');
+    body.style.backgroundColor = '';
+    body.style.color = '';
+    
+    document.querySelectorAll('.bg-white, .bg-gray-50, .bg-gray-100, [class*="bg-gradient"]').forEach(el => {
+      el.style.backgroundColor = '';
+      el.style.color = '';
+    });
+    
+    document.querySelectorAll('th').forEach(el => {
+      el.style.backgroundColor = '';
+      el.style.color = '';
+      el.style.borderColor = '';
+    });
+    
+    document.querySelectorAll('td').forEach(el => {
+      el.style.borderColor = '';
+      el.style.color = '';
+    });
+    
+    document.querySelectorAll('input, select, textarea').forEach(el => {
+      el.style.backgroundColor = '';
+      el.style.color = '';
+      el.style.borderColor = '';
+    });
+    
+    document.querySelectorAll('[class*="text-gray"], [class*="border"]').forEach(el => {
+      el.style.color = '';
+      el.style.borderColor = '';
+    });
+  }
+  
+  localStorage.setItem('theme', theme === 'light' ? 'light' : theme === 'dark' ? 'dark' : 'auto');
+}
+
+// Load theme preference
+window.addEventListener('load', function() {
+  const savedTheme = localStorage.getItem('theme') || 'light';
+  applyTheme(savedTheme);
+  document.querySelector('input[name="theme"][value="' + savedTheme + '"]').checked = true;
+});
+
+// Theme radio button change listeners
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('input[name="theme"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+      applyTheme(this.value);
+    });
+  });
+});
 
 // Auto open section from URL (#driver)
 if(window.location.hash){

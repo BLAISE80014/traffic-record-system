@@ -1,0 +1,14 @@
+{
+    "name": "blaise/traffic-system",
+    "description": "Traffic System",
+    "type": "project",
+    "require": {
+        "google/apiclient": "^2.0"
+    },
+    "authors": [
+        {
+            "name": "Blaise",
+            "email": "blaise@example.com"
+        }
+    ]
+}

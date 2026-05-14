@@ -1,5 +1,7 @@
 <?php
-// ---------------- DATABASE CONNECTION ----------------
+session_start();
+
+// ================= DATABASE CONNECTION =================
 $host = "localhost";
 $user = "root";
 $pass = "";
@@ -8,139 +10,364 @@ $db   = "traffic_system";
 $conn = new mysqli($host, $user, $pass, $db);
 
 if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
+    die("Connection Failed: " . $conn->connect_error);
 }
 
-// ---------------- SIGNUP ----------------
+// ================= GOOGLE CONFIG =================
+include 'google_config.php';
+
+// ================= SIGNUP =================
 if (isset($_POST['signup'])) {
-    $name = $_POST['name'];
-    $email = $_POST['email'];
+
+    $name     = trim($_POST['name']);
+    $email    = trim($_POST['email']);
     $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
 
-    $sql = "INSERT INTO users (name, email, password)
-            VALUES ('$name', '$email', '$password')";
+    // CHECK IF EMAIL EXISTS
+    $check = $conn->prepare("SELECT id FROM users WHERE email=?");
+    $check->bind_param("s", $email);
+    $check->execute();
+    $checkResult = $check->get_result();
 
-    $conn->query($sql);
+    if ($checkResult->num_rows > 0) {
+
+        echo "<script>alert('Email already exists');</script>";
+
+    } else {
+
+        // INSERT USER
+        $stmt = $conn->prepare("
+            INSERT INTO users(name,email,password)
+            VALUES(?,?,?)
+        ");
+
+        $stmt->bind_param("sss", $name, $email, $password);
+
+        if ($stmt->execute()) {
+
+            // ================= SEND EMAIL =================
+            $to = $email;
+            $subject = "Welcome To Traffic Record System";
+
+            $message = "
+            <html>
+            <head>
+                <title>Welcome</title>
+            </head>
+
+            <body style='font-family:Arial;padding:20px;'>
+
+                <div style='max-width:600px;margin:auto;background:#f4f4f4;padding:30px;border-radius:10px;'>
+
+                    <h2 style='color:#2563eb;'>
+                        Welcome $name
+                    </h2>
+
+                    <p>
+                        Your account has been created successfully.
+                    </p>
+
+                    <p>
+                        Thank you for joining Traffic Record System.
+                    </p>
+
+                    <br>
+
+                    <a href='http://localhost/traffic/dashboard.php'
+                       style='background:#2563eb;
+                              color:white;
+                              padding:12px 20px;
+                              text-decoration:none;
+                              border-radius:5px;'>
+                        Open Dashboard
+                    </a>
+
+                </div>
+
+            </body>
+            </html>
+            ";
+
+            $headers = "MIME-Version: 1.0" . "\r\n";
+            $headers .= "Content-type:text/html;charset=UTF-8" . "\r\n";
+            $headers .= "From: Traffic Record System <yourgmail@gmail.com>" . "\r\n";
+
+            mail($to, $subject, $message, $headers);
+
+            echo "<script>alert('Signup Successful');</script>";
+
+        } else {
+
+            echo "<script>alert('Signup Failed');</script>";
+
+        }
+    }
 }
 
-// ---------------- LOGIN ----------------
+// ================= LOGIN =================
 if (isset($_POST['login'])) {
-    $email = $_POST['email'];
+
+    $email = trim($_POST['email']);
     $password = $_POST['password'];
 
-    $sql = "SELECT * FROM users WHERE email='$email'";
-    $result = $conn->query($sql);
+    // SAFE QUERY
+    $stmt = $conn->prepare("
+        SELECT * FROM users WHERE email=?
+    ");
+
+    $stmt->bind_param("s", $email);
+    $stmt->execute();
+
+    $result = $stmt->get_result();
 
     if ($result->num_rows > 0) {
+
         $user = $result->fetch_assoc();
 
+        // VERIFY PASSWORD
         if (password_verify($password, $user['password'])) {
-            echo "<script>alert('Login successful');</script>";
+
+            // SESSION
+            $_SESSION['user_id']    = $user['id'];
+            $_SESSION['user_name']  = $user['name'];
+            $_SESSION['user_email'] = $user['email'];
+
+            // ================= LOGIN EMAIL =================
+            $to = $user['email'];
+            $subject = "Login Alert";
+
+            $message = "
+            <html>
+            <body style='font-family:Arial;padding:20px;'>
+
+                <div style='max-width:600px;margin:auto;background:#f4f4f4;padding:30px;border-radius:10px;'>
+
+                    <h2 style='color:#2563eb;'>
+                        Hello ".$user['name']."
+                    </h2>
+
+                    <p>
+                        You logged into your account successfully.
+                    </p>
+
+                    <p>
+                        If this was not you, change your password immediately.
+                    </p>
+
+                </div>
+
+            </body>
+            </html>
+            ";
+
+            $headers = "MIME-Version: 1.0" . "\r\n";
+            $headers .= "Content-type:text/html;charset=UTF-8" . "\r\n";
+            $headers .= "From: Traffic Record System <yourgmail@gmail.com>" . "\r\n";
+
+            mail($to, $subject, $message, $headers);
+
+            // REDIRECT
             header("location: dashboard.php");
             exit();
+
         } else {
-            echo "<script>alert('Wrong password');</script>";
+
+            echo "<script>alert('Wrong Password');</script>";
+
         }
+
     } else {
-        echo "<script>alert('User not found');</script>";
+
+        echo "<script>alert('User Not Found');</script>";
+
     }
 }
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Login / Signup</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Traffic Record System</title>
+
 <script src="https://cdn.tailwindcss.com"></script>
 
 <style>
-.overlay {
-  background: linear-gradient(135deg, #1e3a8a, #1d4ed8, #2563eb);
+
+.overlay{
+    background: linear-gradient(135deg,#1e3a8a,#2563eb);
 }
+
 </style>
+
 </head>
 
-<body class="flex items-center justify-center min-h-screen bg-gray-100">
+<body class="bg-gray-100 min-h-screen flex items-center justify-center">
 
-<div class="w-[900px] h-[550px] bg-white rounded-2xl shadow-2xl flex overflow-hidden relative">
+<div class="w-[900px] h-[550px] bg-white rounded-2xl shadow-2xl overflow-hidden relative flex">
 
-<!-- FORMS -->
-<div class="w-full flex transition-transform duration-700" id="forms">
+    <!-- FORMS -->
+    <div class="w-full flex transition-transform duration-700" id="forms">
 
-<!-- LOGIN -->
-<div class="w-1/2 p-10 flex flex-col justify-center">
+        <!-- LOGIN -->
+        <div class="w-1/2 p-10 flex flex-col justify-center">
 
-<h2 class="text-3xl font-bold mb-6">Sign in</h2>
+            <h2 class="text-3xl font-bold mb-6">
+                Sign In
+            </h2>
 
-<form method="POST">
-<input name="email" class="mb-4 p-3 border rounded-lg w-full" type="email" placeholder="Email" required />
-<input name="password" class="mb-4 p-3 border rounded-lg w-full" type="password" placeholder="Password" required />
+            <form method="POST">
 
-<button name="login" class="bg-blue-600 text-white p-3 rounded-lg w-full">
-Login
-</button>
-</form>
+                <input
+                    type="email"
+                    name="email"
+                    placeholder="Email"
+                    required
+                    class="w-full p-3 border rounded-lg mb-4"
+                >
+
+                <input
+                    type="password"
+                    name="password"
+                    placeholder="Password"
+                    required
+                    class="w-full p-3 border rounded-lg mb-4"
+                >
+
+                <button
+                    name="login"
+                    class="w-full bg-blue-600 text-white p-3 rounded-lg"
+                >
+                    Login
+                </button>
+
+            </form>
+
+            <div class="text-center my-4 text-gray-500">
+                OR
+            </div>
+
+            <a
+                href="<?php echo $google_client->createAuthUrl(); ?>"
+                class="bg-red-600 text-white p-3 rounded-lg text-center block"
+            >
+                Sign In With Google
+            </a>
+
+        </div>
+
+        <!-- SIGNUP -->
+        <div class="w-1/2 p-10 flex flex-col justify-center">
+
+            <h2 class="text-3xl font-bold mb-6">
+                Create Account
+            </h2>
+
+            <form method="POST">
+
+                <input
+                    type="text"
+                    name="name"
+                    placeholder="Full Name"
+                    required
+                    class="w-full p-3 border rounded-lg mb-4"
+                >
+
+                <input
+                    type="email"
+                    name="email"
+                    placeholder="Email"
+                    required
+                    class="w-full p-3 border rounded-lg mb-4"
+                >
+
+                <input
+                    type="password"
+                    name="password"
+                    placeholder="Password"
+                    required
+                    class="w-full p-3 border rounded-lg mb-4"
+                >
+
+                <button
+                    name="signup"
+                    class="w-full bg-blue-600 text-white p-3 rounded-lg"
+                >
+                    Sign Up
+                </button>
+
+            </form>
+
+            <div class="text-center my-4 text-gray-500">
+                OR
+            </div>
+
+            <a
+                href="<?php echo $google_client->createAuthUrl(); ?>"
+                class="bg-red-600 text-white p-3 rounded-lg text-center block"
+            >
+                Sign Up With Google
+            </a>
+
+        </div>
+
+    </div>
+
+    <!-- OVERLAY -->
+    <div class="absolute top-0 right-0 w-1/2 h-full overlay text-white flex flex-col items-center justify-center p-10">
+
+        <h2 class="text-3xl font-bold mb-4" id="overlayTitle">
+            Welcome Back!
+        </h2>
+
+        <p class="mb-6 text-center">
+            Login or create account
+        </p>
+
+        <button
+            id="toggleBtn"
+            class="border border-white px-6 py-2 rounded-full"
+        >
+            Sign Up
+        </button>
+
+    </div>
 
 </div>
 
-<!-- SIGNUP -->
-<div class="w-1/2 p-10 flex flex-col justify-center">
-
-<h2 class="text-3xl font-bold mb-6">Create account</h2>
-
-<form method="POST">
-<input name="name" class="mb-4 p-3 border rounded-lg w-full" type="text" placeholder="Name" required />
-<input name="email" class="mb-4 p-3 border rounded-lg w-full" type="email" placeholder="Email" required />
-<input name="password" class="mb-4 p-3 border rounded-lg w-full" type="password" placeholder="Password" required />
-
-<button name="signup" class="bg-blue-600 text-white p-3 rounded-lg w-full">
-Sign Up
-</button>
-</form>
-
-</div>
-
-</div>
-
-<!-- OVERLAY -->
-<div class="absolute top-0 right-0 w-1/2 h-full overlay text-white flex flex-col items-center justify-center p-10">
-
-<h2 class="text-3xl font-bold mb-4" id="overlayTitle">Welcome back!</h2>
-
-<p class="mb-6 text-center">
-Login or create account
-</p>
-
-<button id="toggleBtn" class="border border-white px-6 py-2 rounded-full">
-Sign Up
-</button>
-
-</div>
-
-</div>
-
-<!-- JS -->
+<!-- JAVASCRIPT -->
 <script>
- const forms = document.getElementById('forms'); 
- const toggleBtn = document.getElementById('toggleBtn'); 
- const overlayTitle = document.getElementById('overlayTitle'); 
- 
- let isLogin = true; 
- toggleBtn.addEventListener('click', () => { 
-  forms.classList.toggle('-translate-x-1/2'); 
-  
-  isLogin = !isLogin; 
-  
-  if (isLogin) { 
-    overlayTitle.innerText = "Welcome back!"; 
-    toggleBtn.innerText = "Sign Up"; 
-    } else { 
-      overlayTitle.innerText = "Hello, Friend!"; 
-      toggleBtn.innerText = "Sign In"; 
-      } 
-      }); 
-      </script>
+
+const forms = document.getElementById('forms');
+const toggleBtn = document.getElementById('toggleBtn');
+const overlayTitle = document.getElementById('overlayTitle');
+
+let isLogin = true;
+
+toggleBtn.addEventListener('click', () => {
+
+    forms.classList.toggle('-translate-x-1/2');
+
+    isLogin = !isLogin;
+
+    if(isLogin){
+
+        overlayTitle.innerText = "Welcome Back!";
+        toggleBtn.innerText = "Sign Up";
+
+    }else{
+
+        overlayTitle.innerText = "Hello Friend!";
+        toggleBtn.innerText = "Sign In";
+
+    }
+
+});
+
+</script>
+
 </body>
 </html>
